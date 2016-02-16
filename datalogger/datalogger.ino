@@ -62,8 +62,16 @@ boolean stopwatchRunning = false;
 void setup(){
   Wire.begin();
   Wire.beginTransmission(MPU);
+  Wire.endTransmission(false);
   Wire.write(0x6B);  // PWR_MGMT_1 register
   Wire.write(0);     // set to zero (wakes up the MPU-6050)
+  Wire.beginTransmission(MPU);
+  Wire.write(0x1B);  //GYRO_CONFIG register
+  Wire.write(0);     //0: 250°/S, 8: 500°/S, 10: 1000°/S, 18: 2000°/S
+  Wire.beginTransmission(MPU);
+  Wire.write(0x1C);  //ACCEL_CONFIG register
+  Wire.write(0);        //0: 2G, 8: 4G, 10: 8G, 18: 16G
+  
   Wire.endTransmission(true);
   
   lcd.begin(20,4);
@@ -71,7 +79,7 @@ void setup(){
   lcd.clear();
   
   int timerId;
-    timerId = t.every(300, updateDisplay);
+//  timerId = t.every(300, updateDisplay);
 //  timerId = t.every(300, updateEngineTemperature);
     timerId = t.every(300, updateAccelerometer);
     timerId = t.every(200, saveData);
@@ -85,6 +93,28 @@ void loop(){
     updateTimeTables();     //needs to run as fast as possible because stopwatch() only returns sectortime while driving over a magnet strip.
     t.update();    
     
+    lcd.clear();
+    lcd.setCursor(0,0);
+    lcd.print(AcX);
+    lcd.setCursor(0,1);
+    lcd.print(AcY);
+    lcd.setCursor(0,2);
+    lcd.print(AcZ);
+    
+    lcd.setCursor(10,0);
+    lcd.print(GyX);
+    lcd.setCursor(10,1);
+    lcd.print(GyY);
+    lcd.setCursor(10,2);
+    lcd.print(GyZ);
+    
+    lcd.setCursor(15,0);
+    lcd.print(analogMagnet);
+    
+    lcd.setCursor(6,3);
+    lcd.print(" S:");
+    lcd.print((currentSector + 1) * stopwatchRunning);
+    delay(1000);
     
 }
 
