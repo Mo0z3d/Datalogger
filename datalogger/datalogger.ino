@@ -71,7 +71,7 @@ void setup(){
   lcd.clear();
   
   int timerId;
-//  timerId = t.every(300, updateDisplay);
+    timerId = t.every(300, updateDisplay);
 //  timerId = t.every(300, updateEngineTemperature);
     timerId = t.every(300, updateAccelerometer);
     timerId = t.every(200, saveData);
@@ -84,29 +84,6 @@ void loop(){
     //updateRPM();            //needs to run as fast as possible because at high RPM the square wave will have a period of a few milliseconds.
     updateTimeTables();     //needs to run as fast as possible because stopwatch() only returns sectortime while driving over a magnet strip.
     t.update();    
-    
-    lcd.clear();
-    lcd.setCursor(0,0);
-    lcd.print(AcX);
-    lcd.setCursor(0,1);
-    lcd.print(AcY);
-    lcd.setCursor(0,2);
-    lcd.print(AcZ);
-    
-    lcd.setCursor(10,0);
-    lcd.print(GyX);
-    lcd.setCursor(10,1);
-    lcd.print(GyY);
-    lcd.setCursor(10,2);
-    lcd.print(GyZ);
-    
-    lcd.setCursor(15,0);
-    lcd.print(analogMagnet);
-    
-    lcd.setCursor(6,3);
-    lcd.print(" S:");
-    lcd.print((currentSector + 1) * stopwatchRunning);
-    delay(1000);
     
     
 }
