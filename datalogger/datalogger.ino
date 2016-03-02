@@ -27,10 +27,12 @@ float GEARRATIO = float(1); //engine/axle
 
 int analogMagnet;
 int MAGNETPIN = 0;
+int defaultMagnet;
 
 const int MPU=0x68;  // I2C address of the MPU-6050
 int16_t AcX,AcY,AcZ,Tmp,GyX,GyY,GyZ;
 float totalG;
+
 
 const int SECTORS = 2;  //Sector 0,1,2
 const int LAPS = 4;    //laps to keep so they can be displayed.
@@ -61,17 +63,20 @@ boolean stopwatchRunning = false;
 
 void setup(){
   Wire.begin();
-  Wire.beginTransmission(MPU);
-  Wire.endTransmission(false);
-  Wire.write(0x6B);  // PWR_MGMT_1 register
-  Wire.write(0);     // set to zero (wakes up the MPU-6050)
-  Wire.beginTransmission(MPU);
-  Wire.write(0x1B);  //GYRO_CONFIG register
-  Wire.write(0);     //0: 250°/S, 8: 500°/S, 10: 1000°/S, 18: 2000°/S
-  Wire.beginTransmission(MPU);
-  Wire.write(0x1C);  //ACCEL_CONFIG register
-  Wire.write(0);        //0: 2G, 8: 4G, 10: 8G, 18: 16G
   
+  Wire.beginTransmission(MPU);
+  Wire.write(0x6B);      // PWR_MGMT_1 register
+  Wire.write(0);         // set to zero (wakes up the MPU-6050)
+  Wire.endTransmission(true);
+      
+  Wire.beginTransmission(MPU);
+  Wire.write(0x1B);      //GYRO_CONFIG register
+  Wire.write(0);         //0: 250°/S, 8: 500°/S, 16: 1000°/S, 24: 2000°/S
+  Wire.endTransmission(true); 
+  
+  Wire.beginTransmission(MPU);
+  Wire.write(0x1C);     //ACCEL_CONFIG register
+  Wire.write(8);        //0: 2G, 8: 4G, 16: 8G, 24: 16G
   Wire.endTransmission(true);
   
   lcd.begin(20,4);
@@ -79,13 +84,14 @@ void setup(){
   lcd.clear();
   
   int timerId;
-//  timerId = t.every(300, updateDisplay);
-//  timerId = t.every(300, updateEngineTemperature);
-    timerId = t.every(300, updateAccelerometer);
-    timerId = t.every(200, saveData);
+    timerId = t.every(1000, updateDisplay);
+//  timerId = t.every(1000, updateEngineTemperature);
+    timerId = t.every(10, updateAccelerometer);  //100Hz, 10m
+    timerId = t.every(10, saveData);
   
   if(!SD.begin())
-    error("SD card failed"); 
+    error("SD card failed");
+  calibrate(); 
 }
 
 void loop(){
@@ -93,31 +99,18 @@ void loop(){
     updateTimeTables();     //needs to run as fast as possible because stopwatch() only returns sectortime while driving over a magnet strip.
     t.update();    
     
-    lcd.clear();
-    lcd.setCursor(0,0);
-    lcd.print(AcX);
-    lcd.setCursor(0,1);
-    lcd.print(AcY);
-    lcd.setCursor(0,2);
-    lcd.print(AcZ);
-    
-    lcd.setCursor(10,0);
-    lcd.print(GyX);
-    lcd.setCursor(10,1);
-    lcd.print(GyY);
-    lcd.setCursor(10,2);
-    lcd.print(GyZ);
-    
-    lcd.setCursor(15,0);
-    lcd.print(analogMagnet);
-    
-    lcd.setCursor(6,3);
-    lcd.print(" S:");
-    lcd.print((currentSector + 1) * stopwatchRunning);
-    delay(1000);
-    
 }
 
+void calibrate(){
+  //Determine default magnet value, dismiss first values.
+  for(int i=0; i<100; i++)
+   defaultMagnet = analogRead(MAGNETPIN);
+  defaultMagnet = 0;
+  for(int i=0; i<50;i++)
+    defaultMagnet += analogRead(MAGNETPIN);    
+  defaultMagnet = defaultMagnet / 50;  
+  
+}
 
 //Displays the error message and goes into an infinite delay(), reset needed.
 void error(String message){
@@ -131,10 +124,12 @@ void error(String message){
 //Saves the current data to the SD card.
 void saveData(){
   dataString = "";
-  dataString += (String)rpm;
+  dataString += (String)millis();
   dataString += ",";
-  dataString += (String)engineTemperature;
-  dataString += ",";
+//  dataString += (String)rpm;
+//  dataString += ",";
+//  dataString += (String)engineTemperature;
+//  dataString += ",";
   dataString += (String)ambientTemperature;
   dataString += ",";
   dataString += (String)AcX;
@@ -228,7 +223,8 @@ void updateAccelerometer(){
     GyZ=Wire.read()<<8|Wire.read();  // 0x47 (GYRO_ZOUT_H) & 0x48 (GYRO_ZOUT_L)
    
     ambientTemperature = Tmp/340.00+34.53; 
-    totalG =  sqrt(AcX*AcX + AcY*AcY + AcZ*AcZ);
+ //   totalG =  sqrt(AcX*AcX + AcY*AcY + AcZ*AcZ);
+    totalG = 1;
 }
 
 
@@ -236,25 +232,21 @@ void updateAccelerometer(){
 void updateDisplay(){
     lcd.setCursor(0,0);
     lcd.print("RPM:");
-    lcd.print(rpm);
+    lcd.print(defaultMagnet);
     if(rpm<10)
       lcd.print(" ");
     if(rpm<100)
       lcd.print(" ");
     if(rpm<1000)
       lcd.print(" ");
-    if(rpm<10000)
-      lcd.print(" ");
-    if(rpm<100000)
-      lcd.print(" ");
-     
+
+
     v=(unsigned int)(rpm*GEARRATIO); //*bandomtrek
     lcd.setCursor(0,1);
     lcd.print("SPEED:");
-    lcd.print(v);   
+    lcd.print(analogMagnet);   
     if(v < 100)
-      lcd.print(" ");
-    if(v < 1000)
+
       lcd.print(" ");    
     lcd.setCursor(0,2);
     lcd.print("T:");
@@ -319,13 +311,13 @@ void updateDisplay(){
 
 //updates engine temperature
 void updateEngineTemperature(){
-     engineTemperature =(int)(analogRead(TEMPERATUREPIN)/ 2.048); 
+     engineTemperature =(int)(500.0 * analogRead(TEMPERATUREPIN) / 1024); 
 }
 
 //returns true if currently passing a magnet strip
 boolean passingMagnet(){
     analogMagnet = analogRead(MAGNETPIN);    //No field: 506-510
-    if(analogMagnet >=513 or analogMagnet <= 507)
+    if(analogMagnet > (defaultMagnet + 1) or analogMagnet < (defaultMagnet - 1))
       return true;
     else
       return false;
@@ -366,19 +358,7 @@ unsigned long stopwatch(){
 void updateTimeTables(){  
   sectortime = stopwatch();
   
-  if(sectortime != 0 && sectortimesFirst == 0 && sectortime > 100){                                  //we cant check sectortime != sectortimes[sectortimesFirst - 1] when sectortimesFirst == 0. (see next if() )
-    sectortimes[sectortimesFirst] = sectortime;
-    sectortimesFirst ++;
-    currentSector = sectortimesFirst;
-  }
-    
-  if(sectortime != 0  && sectortime != sectortimes[sectortimesFirst-1] && sectortime > 300){          //if stopwatch is returning a time that is different from the last one (stopwatch() keeps returning time while passingMagnet() is true) and this time > 300.
-    sectortimes[sectortimesFirst] = sectortime;                                                       
-    sectortimesFirst ++;  
-    currentSector = sectortimesFirst;
-  } 
-    
-  if(sectortimesFirst==SECTORS+1 && sectortimesFirst == sectortimesSaved){  //if we reached the end of the array AND the last sector has been saved.
+   if(sectortimesFirst==SECTORS+1 && sectortimesFirst == sectortimesSaved){  //if we reached the end of the array AND the last sector has been saved.
      currentLap = currentLap + 1;
      sectortimesFirst = 0;
      sectortimesSaved = 0;
@@ -390,7 +370,20 @@ void updateTimeTables(){
      }
      laptimes[laptimesFirst] = laptime;
      laptimesFirst = (laptimesFirst+1)%(LAPS+2);
+  } 
+  if(sectortime != 0 && sectortimesFirst == 0 && sectortime != sectortimes[SECTORS] && sectortime > 1000){                                  //we cant check sectortime != sectortimes[sectortimesFirst - 1] when sectortimesFirst == 0. (see next if() )
+    sectortimes[sectortimesFirst] = sectortime;
+    sectortimesFirst ++;
+    currentSector = sectortimesFirst;
   }
+    
+  if(sectortime != 0  && sectortimesFirst != 0 && sectortime != sectortimes[sectortimesFirst-1] && sectortime > 1000){          //if stopwatch is returning a time that is different from the last one (stopwatch() keeps returning time while passingMagnet() is true) and this time > 300.
+    sectortimes[sectortimesFirst] = sectortime;                                                       
+    sectortimesFirst ++;  
+    currentSector = sectortimesFirst;
+  } 
+    
+
 
 }
 
