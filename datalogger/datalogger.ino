@@ -8,22 +8,7 @@ String dataString = "";
 
 LiquidCrystal_I2C lcd(0x27, 2, 1, 0, 4, 5, 6, 7, 3, POSITIVE); //I2C display at adres 0x27
 
-int engineTemperature;
-int ambientTemperature;
-int TEMPERATUREPIN = 1;
-
-unsigned int rpm;
-unsigned int v;
-int RPMPIN = 2;
-int analogRpm;
-boolean sparkState;
-boolean previousSparkState = false;
 boolean engineRunning = false;
-unsigned long sparkInterval;
-unsigned long sparkStart;
-
-
-float GEARRATIO = float(1); //engine/axle
 
 int analogMagnet;
 int MAGNETPIN = 0;
@@ -31,8 +16,7 @@ int defaultMagnet;
 
 const int MPU=0x68;  // I2C address of the MPU-6050
 int16_t AcX,AcY,AcZ,Tmp,GyX,GyY,GyZ;
-float totalG;
-
+float ambientTemperature;
 
 const int SECTORS = 2;  //Sector 0,1,2
 const int LAPS = 4;    //laps to keep so they can be displayed.
@@ -84,10 +68,7 @@ void setup(){
   lcd.clear();
   
   int timerId;
-    timerId = t.every(1000, updateDisplay);
-//  timerId = t.every(1000, updateEngineTemperature);
-    timerId = t.every(10, updateAccelerometer);  //100Hz, 10m
-    timerId = t.every(10, saveData);
+  timerId = t.every(1000, updateDisplay);
   
   if(!SD.begin())
     error("SD card failed");
@@ -95,8 +76,9 @@ void setup(){
 }
 
 void loop(){
-    //updateRPM();            //needs to run as fast as possible because at high RPM the square wave will have a period of a few milliseconds.
     updateTimeTables();     //needs to run as fast as possible because stopwatch() only returns sectortime while driving over a magnet strip.
+    updateAccelerometer();
+    saveData();
     t.update();    
     
 }
@@ -126,10 +108,6 @@ void saveData(){
   dataString = "";
   dataString += (String)millis();
   dataString += ",";
-//  dataString += (String)rpm;
-//  dataString += ",";
-//  dataString += (String)engineTemperature;
-//  dataString += ",";
   dataString += (String)ambientTemperature;
   dataString += ",";
   dataString += (String)AcX;
@@ -169,44 +147,7 @@ void saveData(){
   }
 }
 
-//Returns true if there is a spark, behaves like a Schmitt Trigger. (Hysteresis)
-//Limits to be determined. (Check max. input  x/1024 first)
-//1024/5 = 204,8.  Hysteresis over 1/5th of the range: 0 -> 409,6 -> 614,4 -> 1024
-boolean spark(){
-  analogRpm = analogRead(RPMPIN);
-  if(previousSparkState == true && analogRpm >= 410)
-    return true;
-  if(previousSparkState == true && analogRpm < 410)
-    return false;
-  if(previousSparkState == false && analogRpm >= 615)
-    return true;
-  if(previousSparkState == false && analogRpm < 615)
-    return false;
-    
-  else
-    return false;
-}
 
-//updates the current rpm based on spark(), measures time between positive flanks. (same principle as stopwatch() )
-void updateRPM(){  
-  sparkState = spark();
-  if(sparkState == false && previousSparkState == true){
-    previousSparkState = sparkState;
-  }
-  else if(sparkState == true && previousSparkState == false && engineRunning == false){
-   sparkStart = millis();
-   engineRunning = true;
-   previousSparkState = sparkState;
-  }  
-  else if(sparkState == true && previousSparkState == false && engineRunning == true){
-    sparkInterval = millis() - sparkStart;
-    sparkStart = millis();
-    previousSparkState = sparkState;
-    if(sparkInterval > 6u)                         //This prevents some readings, by doing this we limit the maximum measurable RPM to 20 000.
-      rpm=(unsigned int)(120000/sparkInterval);    // (60 * 2 * 1000)/sparkInterval
-  }
-  else{}
-}
 
 //updates Accleration, Gyro and temperature values over I2C.
 void updateAccelerometer(){
@@ -223,49 +164,20 @@ void updateAccelerometer(){
     GyZ=Wire.read()<<8|Wire.read();  // 0x47 (GYRO_ZOUT_H) & 0x48 (GYRO_ZOUT_L)
    
     ambientTemperature = Tmp/340.00+34.53; 
- //   totalG =  sqrt(AcX*AcX + AcY*AcY + AcZ*AcZ);
-    totalG = 1;
 }
 
 
 //Writes current data to the display.
 void updateDisplay(){
+
+    lcd.print(" ");    
     lcd.setCursor(0,0);
-    lcd.print("RPM:");
-    lcd.print(defaultMagnet);
-    if(rpm<10)
-      lcd.print(" ");
-    if(rpm<100)
-      lcd.print(" ");
-    if(rpm<1000)
-      lcd.print(" ");
-
-
-    v=(unsigned int)(rpm*GEARRATIO); //*bandomtrek
-    lcd.setCursor(0,1);
-    lcd.print("SPEED:");
-    lcd.print(analogMagnet);   
-    if(v < 100)
-
-      lcd.print(" ");    
-    lcd.setCursor(0,2);
     lcd.print("T:");
     lcd.print(ambientTemperature);
     if(ambientTemperature < 10);
-      lcd.print(" ");
-    lcd.setCursor(5,2);
-    lcd.print("T:");
-    lcd.print(engineTemperature);
-    if(engineTemperature<100)
-      lcd.print(" ");
-    if(engineTemperature<10)
-      lcd.print(" ");
-     
-    lcd.setCursor(0,3);
-    lcd.print("G:");
-    lcd.print(totalG);
+    lcd.print(" ");
     
-    lcd.setCursor(6,3);
+    lcd.setCursor(6,0);
     lcd.print(" S:");
     lcd.print((currentSector + 1) * stopwatchRunning);
     
@@ -309,10 +221,6 @@ void updateDisplay(){
     }
 }
 
-//updates engine temperature
-void updateEngineTemperature(){
-     engineTemperature =(int)(500.0 * analogRead(TEMPERATUREPIN) / 1024); 
-}
 
 //returns true if currently passing a magnet strip
 boolean passingMagnet(){
@@ -322,7 +230,6 @@ boolean passingMagnet(){
     else
       return false;
 }
-
 
 //Returns time passed between magnet strips while passing magnet strip, else returns 0
 unsigned long stopwatch(){
@@ -381,8 +288,7 @@ void updateTimeTables(){
     sectortimes[sectortimesFirst] = sectortime;                                                       
     sectortimesFirst ++;  
     currentSector = sectortimesFirst;
-  } 
-    
+  }  
 
 
 }
